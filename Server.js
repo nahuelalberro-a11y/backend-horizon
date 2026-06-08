@@ -8,10 +8,10 @@ const app = express();
 app.use(cors({ origin: '*', methods: ['GET', 'POST'] }));
 app.use(express.json());
 
-// CREDENCIALES DE 2WORKERS (AUVO) - VERIFICADAS
+// CREDENCIALES DE 2WORKERS (AUVO) - DOMINIO OFICIAL CORRECTO
 const APP_KEY = 'slwiprG93kgakiA1z4iRJ7J8T14kVFB'; 
 const TOKEN = 'slwiprG93kgrl3T2o8wS6LB5msLgXys';
-const API_BASE = 'https://api.2workers.com/v2'; // <--- CORREGIDO: .com en lugar de .me
+const API_BASE = 'https://api.2workers.me/v2'; // <-- VOLVIMOS AL .ME CORRECTO
 
 // CREDENCIALES DE TU PÁGINA WEB
 const USUARIO_VALIDO = 'horizon_admin';
@@ -35,18 +35,22 @@ app.get('/api/mis-tareas', async (req, res) => {
 
         console.log(`[SERVER] Filtrando tareas para el día: ${fechaQuery}`);
 
-        // Separamos las partes para construir formatos de coincidencia
-        const [año, mes, dia] = fechaQuery.split('-');
-        const formatoA = `${año}-${mes}-${dia}`; // "2026-06-09"
-        const formatoB = `${dia}/${mes}/${año}`; // "09/06/2026"
+        // Separamos en inglés para evitar la ñ en Linux
+        const partes = fechaQuery.split('-');
+        const currentYear = partes[0];
+        const currentMonth = partes[1];
+        const currentDay = partes[2];
 
-        // Traemos el mes completo para burlar las restricciones de la API de Auvo
-        const mesInt = parseInt(mes);
-        const ultimoDia = new Date(año, mesInt, 0).getDate();
-        const startDate = `${año}-${mes}-01T00:00:00`;
-        const endDate = `${año}-${mes}-${ultimoDia}T23:59:59`;
+        const formatoA = `${currentYear}-${currentMonth}-${currentDay}`; // "2026-06-09"
+        const formatoB = `${currentDay}/${currentMonth}/${currentYear}`; // "09/06/2026"
 
-        // 1. Login contra el endpoint oficial .com
+        // Traemos el mes completo para asegurar la respuesta de Auvo
+        const mesInt = parseInt(currentMonth);
+        const ultimoDia = new Date(parseInt(currentYear), mesInt, 0).getDate();
+        const startDate = `${currentYear}-${currentMonth}-01T00:00:00`;
+        const endDate = `${currentYear}-${currentMonth}-${ultimoDia}T23:59:59`;
+
+        // 1. Login contra el endpoint oficial
         const login = await axios.post(`${API_BASE}/login`, { apiKey: APP_KEY, apiToken: TOKEN });
         const token = login.data.result.accessToken;
 
@@ -59,7 +63,7 @@ app.get('/api/mis-tareas', async (req, res) => {
         const itemsAuvo = tareas.data.result?.items || [];
         const mapaCuadrillas = {};
 
-        // 3. Cruzamos los datos y agrupamos por cuadrilla en tiempo real
+        // 3. Cruzamos los datos y agrupamos por cuadrilla
         itemsAuvo.forEach(item => {
             const itemTexto = JSON.stringify(item);
             
