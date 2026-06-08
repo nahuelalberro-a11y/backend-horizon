@@ -4,7 +4,7 @@ const cors = require('cors');
 
 const app = express();
 
-// Configuración abierta de CORS para conectar con Netlify sin bloqueos
+// Configuración de CORS súper abierta para Netlify
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST'],
@@ -31,37 +31,39 @@ app.post('/api/login-web', (req, res) => {
     }
 });
 
-// RUTA CORREGIDA: Ahora sí usa la fecha elegida en el calendario
+// RUTA CENTRAL: Obtiene y filtra las tareas de Auvo
 app.get('/api/mis-tareas', async (req, res) => {
     try {
-        // Capturamos la fecha que manda el HTML (ej: "2026-06-08"). Si no viene, usamos hoy.
         const fechaQuery = req.query.date; 
-        let fechaFiltro = new Date();
-        
-        if (fechaQuery) {
-            const partes = fechaQuery.split('-');
-            // Creamos la fecha local para evitar desfasajes horariios
-            fechaFiltro = new Date(partes[0], partes[1] - 1, partes[2]);
+        let startDate, endDate;
+
+        console.log(`[DEBUG] Parámetro 'date' recibido del frontend: "${fechaQuery}"`);
+
+        if (fechaQuery && fechaQuery.includes('-')) {
+            // Si viene el formato "AAAA-MM-DD" desde el frontend, armamos el rango estricto para ese día
+            startDate = `${fechaQuery}T00:00:00`;
+            endDate = `${fechaQuery}T23:59:59`;
+        } else {
+            // Si por alguna razón no viene el parámetro, calculamos el día de hoy de forma automática
+            const hoy = new Date();
+            const año = hoy.getFullYear();
+            const mes = String(hoy.getMonth() + 1).padStart(2, '0');
+            const dia = String(hoy.getDate()).padStart(2, '0');
+            
+            startDate = `${año}-${mes}-${dia}T00:00:00`;
+            endDate = `${año}-${mes}-${dia}T23:59:59`;
         }
 
-        // Definimos el rango estricto: desde las 00:00:00 hasta las 23:59:59 de ESE día
-        const año = fechaFiltro.getFullYear();
-        const mes = String(fechaFiltro.getMonth() + 1).padStart(2, '0');
-        const dia = String(fechaFiltro.getDate()).padStart(2, '0');
-        
-        const startDate = `${año}-${mes}-${dia}T00:00:00`;
-        const endDate = `${año}-${mes}-${dia}T23:59:59`;
+        console.log(`[DEBUG] Enviando rango a Auvo: Desde ${startDate} Hasta ${endDate}`);
 
-        console.log(`Buscando en Auvo tareas estrictas para el día: ${startDate} al ${endDate}`);
-
-        // Login en Auvo
+        // 1. Login en la API de Auvo
         const loginResponse = await axios.post(`${API_BASE}/login`, {
             apiKey: APP_KEY,
             apiToken: TOKEN
         });
         const paseTemporal = loginResponse.data.result.accessToken;
 
-        // Pedimos a Auvo SOLO las tareas de ese día específico
+        // 2. Petición de tareas filtradas por el rango de fecha calculado
         const tareasResponse = await axios.get(`${API_BASE}/tasks`, {
             params: {
                 paramFilter: JSON.stringify({
@@ -77,7 +79,7 @@ app.get('/api/mis-tareas', async (req, res) => {
 
         const respuestaAuvo = tareasResponse.data;
 
-        // Agrupamos el resultado por cuadrilla (Tu lógica original intacta)
+        // 3. Agrupación por cuadrilla
         if (respuestaAuvo && respuestaAuvo.result && Array.isArray(respuestaAuvo.result.items)) {
             const mapaCuadrillas = {};
 
@@ -99,14 +101,16 @@ app.get('/api/mis-tareas', async (req, res) => {
             });
 
             const resultadoAgrupado = Object.values(mapaCuadrillas);
+            console.log(`[DEBUG] Envío exitoso. Cuadrillas procesadas: ${resultadoAgrupado.length}`);
             return res.json(resultadoAgrupado);
         } else {
+            console.log("[DEBUG] La API de Auvo respondió pero no se encontraron items.");
             return res.json([]);
         }
 
     } catch (error) {
-        console.log("Error en el servidor:", error.message);
-        res.status(500).json({ error: 'Hubo un problema al obtener las tareas de este día' });
+        console.error("[SERVER ERROR]:", error.message);
+        res.status(500).json({ error: 'Hubo un problema al obtener las tareas del servidor' });
     }
 });
 
