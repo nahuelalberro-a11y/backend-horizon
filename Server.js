@@ -1,4 +1,37 @@
-// RUTA CENTRAL: Obtiene y filtra las tareas de Auvo de manera inteligente
+const express = require('express');
+const axios = require('axios');
+const cors = require('cors');
+
+const app = express();
+
+// Configuración de CORS súper abierta para Netlify
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type']
+}));
+app.use(express.json());
+
+// Tus credenciales maestras de 2Workers
+const APP_KEY = 'slwiprG93kgakiA1z4iRJ7J8T14kVFB'; 
+const TOKEN = 'slwiprG93kgrl3T2o8wS6LB5msLgXys';
+const API_BASE = 'https://api.2workers.me/v2';
+
+// CREDENCIALES DE ACCESO PARA LA PÁGINA WEB
+const USUARIO_VALIDO = 'horizon_admin';
+const CONTRASEÑA_VALIDA = 'Horizon2026*';
+
+// RUTA 1: Valida el Login de la página web
+app.post('/api/login-web', (req, res) => {
+    const { usuario, password } = req.body;
+    if (usuario === USUARIO_VALIDO && password === CONTRASEÑA_VALIDA) {
+        return res.json({ exito: true, mensaje: 'Acceso concedido' });
+    } else {
+        return res.status(401).json({ exito: false, mensaje: 'Usuario o contraseña incorrectos' });
+    }
+});
+
+// RUTA 2: Obtiene y filtra las tareas de Auvo de manera inteligente
 app.get('/api/mis-tareas', async (req, res) => {
     try {
         const fechaQuery = req.query.date; // Viene "AAAA-MM-DD"
@@ -13,13 +46,17 @@ app.get('/api/mis-tareas', async (req, res) => {
         });
         const paseTemporal = loginResponse.data.result.accessToken;
 
-        // 2. Para asegurarnos de que Auvo no oculte nada, le pedimos un rango amplio (Todo el mes actual)
+        // 2. Calculamos inicio y fin del mes de forma exacta para evitar errores en Auvo
         const partes = fechaQuery.split('-');
-        const año = partes[0];
-        const mes = partes[1];
+        const año = parseInt(partes[0]);
+        const mes = parseInt(partes[1]);
         
-        const startDate = `${año}-${mes}-01T00:00:00`;
-        const endDate = `${año}-${mes}-31T23:59:59`; // Amplio para agarrar todo el mes
+        // Obtenemos cuántos días tiene exactamente ese mes (ej: junio tiene 30)
+        const ultimoDiaMes = new Date(año, mes, 0).getDate(); 
+        const mesStr = String(mes).padStart(2, '0');
+        
+        const startDate = `${año}-${mesStr}-01T00:00:00`;
+        const endDate = `${año}-${mesStr}-${ultimoDiaMes}T23:59:59`; 
 
         const tareasResponse = await axios.get(`${API_BASE}/tasks`, {
             params: {
@@ -39,14 +76,10 @@ app.get('/api/mis-tareas', async (req, res) => {
         if (respuestaAuvo && respuestaAuvo.result && Array.isArray(respuestaAuvo.result.items)) {
             const mapaCuadrillas = {};
 
-            // 3. FILTRADO INTELIGENTE: Recorremos todo el mes pero SOLO guardamos las tareas que coincidan con el día del calendario
+            // 3. FILTRADO INTELIGENTE: Recorremos el mes pero SOLO guardamos lo de hoy
             respuestaAuvo.result.items.forEach(item => {
-                
-                // Extraemos la fecha de la tarea de Auvo (viene como "2026-06-08T14:30:00")
-                // Nos quedamos solo con la parte "AAAA-MM-DD"
                 const fechaTareaAuvo = item.taskDate ? item.taskDate.split('T')[0] : "";
 
-                // ¡PROPIEDAD CLAVE! Solo pasa si la fecha de la tarea coincide exactamente con el calendario
                 if (fechaTareaAuvo === fechaQuery) {
                     const nombreCuadrilla = item.crewName || "SIN CUADRILLA ASIGNADA";
                     
@@ -68,7 +101,7 @@ app.get('/api/mis-tareas', async (req, res) => {
             });
 
             const resultadoAgrupado = Object.values(mapaCuadrillas);
-            console.log(`[DEBUG] Tareas filtradas para el día ${fechaQuery}: ${resultadoAgrupado.length} cuadrillas encontradas.`);
+            console.log(`[DEBUG] Tareas filtradas para ${fechaQuery}: ${resultadoAgrupado.length} cuadrillas encontradas.`);
             return res.json(resultadoAgrupado);
         } else {
             return res.json([]);
@@ -78,4 +111,10 @@ app.get('/api/mis-tareas', async (req, res) => {
         console.error("[SERVER ERROR]:", error.message);
         res.status(500).json({ error: 'Error interno al procesar el filtro de cuadrillas' });
     }
+});
+
+// PUERTO Y ARRANQUE DEL SERVIDOR
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Servidor corriendo en puerto ${PORT}`);
 });
