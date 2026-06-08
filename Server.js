@@ -31,13 +31,13 @@ app.post('/api/login-web', (req, res) => {
     }
 });
 
-// RUTA 2: Obtiene y filtra las tareas de Auvo de manera inteligente
+// RUTA 2: Obtiene y filtra las tareas de Auvo de manera infalible
 app.get('/api/mis-tareas', async (req, res) => {
     try {
-        const fechaQuery = req.query.date; // Viene "AAAA-MM-DD"
+        const fechaQuery = req.query.date; // Ej: "2026-06-09"
         if (!fechaQuery) return res.json([]);
 
-        console.log(`[DEBUG] El usuario quiere ver las tareas del día: ${fechaQuery}`);
+        console.log(`[DEBUG] Buscando tareas para el día: ${fechaQuery}`);
 
         // 1. Nos logueamos en Auvo
         const loginResponse = await axios.post(`${API_BASE}/login`, {
@@ -46,12 +46,11 @@ app.get('/api/mis-tareas', async (req, res) => {
         });
         const paseTemporal = loginResponse.data.result.accessToken;
 
-        // 2. Calculamos inicio y fin del mes de forma exacta para evitar errores en Auvo
+        // 2. Calculamos el mes entero para que Auvo no esconda nada
         const partes = fechaQuery.split('-');
         const año = parseInt(partes[0]);
         const mes = parseInt(partes[1]);
         
-        // Obtenemos cuántos días tiene exactamente ese mes (ej: junio tiene 30)
         const ultimoDiaMes = new Date(año, mes, 0).getDate(); 
         const mesStr = String(mes).padStart(2, '0');
         
@@ -75,12 +74,16 @@ app.get('/api/mis-tareas', async (req, res) => {
 
         if (respuestaAuvo && respuestaAuvo.result && Array.isArray(respuestaAuvo.result.items)) {
             const mapaCuadrillas = {};
+            let contadorMapeo = 0;
 
-            // 3. FILTRADO INTELIGENTE: Recorremos el mes pero SOLO guardamos lo de hoy
+            // 3. EL TRUCO INFALIBLE DE BÚSQUEDA
             respuestaAuvo.result.items.forEach(item => {
-                const fechaTareaAuvo = item.taskDate ? item.taskDate.split('T')[0] : "";
+                // Convertimos el objeto entero a texto (así no nos importa cómo se llama la propiedad)
+                const itemString = JSON.stringify(item);
 
-                if (fechaTareaAuvo === fechaQuery) {
+                // Si la fecha que querés ver está escrita en ALGÚN LADO de esa tarea, entra.
+                if (itemString.includes(fechaQuery)) {
+                    contadorMapeo++;
                     const nombreCuadrilla = item.crewName || "SIN CUADRILLA ASIGNADA";
                     
                     if (!mapaCuadrillas[nombreCuadrilla]) {
@@ -101,7 +104,7 @@ app.get('/api/mis-tareas', async (req, res) => {
             });
 
             const resultadoAgrupado = Object.values(mapaCuadrillas);
-            console.log(`[DEBUG] Tareas filtradas para ${fechaQuery}: ${resultadoAgrupado.length} cuadrillas encontradas.`);
+            console.log(`[DEBUG] ÉXITO: Se encontraron ${contadorMapeo} tareas para el día ${fechaQuery}`);
             return res.json(resultadoAgrupado);
         } else {
             return res.json([]);
@@ -109,7 +112,7 @@ app.get('/api/mis-tareas', async (req, res) => {
 
     } catch (error) {
         console.error("[SERVER ERROR]:", error.message);
-        res.status(500).json({ error: 'Error interno al procesar el filtro de cuadrillas' });
+        res.status(500).json({ error: 'Error interno al procesar las cuadrillas' });
     }
 });
 
