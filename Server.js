@@ -31,12 +31,11 @@ app.post('/api/login-web', (req, res) => {
     }
 });
 
-// TAREAS
+// TAREAS: Enlace directo y exacto con la fecha del calendario
 app.get('/api/mis-tareas', async (req, res) => {
     try {
         const fechaQuery = req.query.date; // Ej: "2026-06-09"
         
-        // Si por algún motivo no llega la fecha, usamos la de hoy
         let fechaBase = new Date();
         if (fechaQuery) {
             const partes = fechaQuery.split('-');
@@ -47,11 +46,11 @@ app.get('/api/mis-tareas', async (req, res) => {
         const mes = String(fechaBase.getMonth() + 1).padStart(2, '0');
         const dia = String(fechaBase.getDate()).padStart(2, '0');
 
-        // Le pedimos a Auvo EXACTAMENTE el día que elegiste en el calendario
+        // Rango del día exacto para que Auvo no mande basura de otros días
         const startDate = `${año}-${mes}-${dia}T00:00:00`;
         const endDate = `${año}-${mes}-${dia}T23:59:59`;
 
-        console.log(`[DEBUG] Pidiendo a Auvo tareas del: ${startDate} al ${endDate}`);
+        console.log(`[SERVER] Pidiendo a Auvo tareas entre: ${startDate} y ${endDate}`);
 
         const loginResponse = await axios.post(`${API_BASE}/login`, {
             apiKey: APP_KEY,
@@ -72,8 +71,8 @@ app.get('/api/mis-tareas', async (req, res) => {
             }
         });
 
-        // LA SOLUCIÓN: Devolvemos la data original y perfecta de Auvo directo a tu web
-        console.log("[DEBUG] Tareas recibidas de Auvo, enviando a la web...");
+        // Pasamos la respuesta Pura y sin tocar al HTML para que él arme las carpetas
+        console.log("[SERVER] Respuesta de Auvo recibida, enviando a la página web...");
         res.json(tareasResponse.data);
 
     } catch (error) {
