@@ -3,93 +3,85 @@ const axios = require('axios');
 const cors = require('cors');
 
 const app = express();
+app.use(cors());
+app.use(express.json()); // Necesario para que funcione el Login
 
-// Permisos abiertos de CORS para conectar con tu Netlify
-app.use(cors({ origin: '*', methods: ['GET', 'POST'] }));
-app.use(express.json());
-
-// CREDENCIALES DE 2WORKERS (AUVO) - DOMINIO OFICIAL CORRECTO
+// Tus credenciales maestras
 const APP_KEY = 'slwiprG93kgakiA1z4iRJ7J8T14kVFB'; 
 const TOKEN = 'slwiprG93kgrl3T2o8wS6LB5msLgXys';
-const API_BASE = 'https://api.2workers.me/v2'; // <-- VOLVIMOS AL .ME CORRECTO
+const API_BASE = 'https://api.2workers.me/v2';
 
-// CREDENCIALES DE TU PÁGINA WEB
-const USUARIO_VALIDO = 'horizon_admin';
-const CONTRASEÑA_VALIDA = 'Horizon2026*';
-
-// RUTA 1: Login Web
+// --- NUEVA PUERTA DE SEGURIDAD ---
 app.post('/api/login-web', (req, res) => {
     const { usuario, password } = req.body;
-    if (usuario === USUARIO_VALIDO && password === CONTRASEÑA_VALIDA) {
+    if (usuario === 'horizon_admin' && password === 'Horizon2026*') {
         return res.json({ exito: true });
     } else {
         return res.status(401).json({ exito: false, mensaje: 'Credenciales incorrectas' });
     }
 });
 
-// RUTA 2: Filtro dinámico mensual/diario inteligente
+// Función original que formatea la fecha
+const formatearFechaHora = (fecha, esInicio) => {
+    const año = fecha.getFullYear();
+    const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+    const dia = String(fecha.getDate()).padStart(2, '0');
+    const hora = esInicio ? '00:00:00' : '23:59:59';
+    return `${año}-${mes}-${dia}T${hora}`;
+};
+
+// --- TU RUTA DE TAREAS ORIGINAL ---
 app.get('/api/mis-tareas', async (req, res) => {
     try {
-        const fechaQuery = req.query.date; // Ej: "2026-06-09"
-        if (!fechaQuery) return res.json([]);
-
-        console.log(`[SERVER] Filtrando tareas para el día: ${fechaQuery}`);
-
-        // Separamos en inglés para evitar la ñ en Linux
-        const partes = fechaQuery.split('-');
-        const currentYear = partes[0];
-        const currentMonth = partes[1];
-        const currentDay = partes[2];
-
-        const formatoA = `${currentYear}-${currentMonth}-${currentDay}`; // "2026-06-09"
-        const formatoB = `${currentDay}/${currentMonth}/${currentYear}`; // "09/06/2026"
-
-        // Traemos el mes completo para asegurar la respuesta de Auvo
-        const mesInt = parseInt(currentMonth);
-        const ultimoDia = new Date(parseInt(currentYear), mesInt, 0).getDate();
-        const startDate = `${currentYear}-${currentMonth}-01T00:00:00`;
-        const endDate = `${currentYear}-${currentMonth}-${ultimoDia}T23:59:59`;
-
-        // 1. Login contra el endpoint oficial
-        const login = await axios.post(`${API_BASE}/login`, { apiKey: APP_KEY, apiToken: TOKEN });
-        const token = login.data.result.accessToken;
-
-        // 2. Pedido de items a Auvo
-        const tareas = await axios.get(`${API_BASE}/tasks`, {
-            params: { paramFilter: JSON.stringify({ startDate, endDate }) },
-            headers: { Authorization: `Bearer ${token}` }
+        console.log("Intentando Login en Auvo...");
+        const loginResponse = await axios.post(`${API_BASE}/login`, {
+            apiKey: APP_KEY,
+            apiToken: TOKEN
         });
 
-        const itemsAuvo = tareas.data.result?.items || [];
-        const mapaCuadrillas = {};
+        const paseTemporal = loginResponse.data.result.accessToken;
+        
+        // Tomamos el mes desde el calendario de la web
+        const fechaQuery = req.query.date; 
+        let hoy = new Date();
+        if (fechaQuery) {
+            const partes = fechaQuery.split('-');
+            hoy = new Date(partes[0], partes[1] - 1, partes[2]);
+        }
 
-        // 3. Cruzamos los datos y agrupamos por cuadrilla
-        itemsAuvo.forEach(item => {
-            const itemTexto = JSON.stringify(item);
-            
-            if (itemTexto.includes(formatoA) || itemTexto.includes(formatoB)) {
-                const cuadrilla = item.crewName || "SIN CUADRILLA ASIGNADA";
-                if (!mapaCuadrillas[cuadrilla]) mapaCuadrillas[cuadrilla] = { crewName: cuadrilla, tasks: [] };
+        // --- TU CALCULADORA DEL MES ACTUAL ---
+        const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+        const ultimoDiaMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
 
-                mapaCuadrillas[cuadrilla].tasks.push({
-                    customerDescription: item.customerDescription || "Sin Cliente",
-                    orientation: item.orientation || "Sin Descripción",
-                    address: item.address || "Sin Dirección",
-                    taskStatus: item.taskStatus,
-                    finished: item.finished
-                });
+        const startDate = formatearFechaHora(primerDiaMes, true);
+        const endDate = formatearFechaHora(ultimoDiaMes, false);
+        
+        console.log(`Pidiendo lista de tareas a Auvo (Desde ${startDate} hasta ${endDate})...`);
+
+        const tareasResponse = await axios.get(`${API_BASE}/tasks`, {
+            params: {
+                paramFilter: JSON.stringify({
+                    startDate: startDate,
+                    endDate: endDate
+                })
+            },
+            headers: {
+                'Authorization': `Bearer ${paseTemporal}`,
+                'Content-Type': 'application/json'
             }
         });
-
-        res.json(Object.values(mapaCuadrillas));
+        
+        console.log("¡Éxito! Tareas enviadas a la web de forma intacta.");
+        // Devolvemos la data CRUDA de Auvo, como lo hacía tu código
+        res.json(tareasResponse.data);
 
     } catch (error) {
-        console.error("Error crítico en backend:", error.message);
-        res.status(500).json({ error: 'Falla al conectar con la API de Auvo' });
+        console.log("Error:", error.message);
+        res.status(500).json({ error: 'Hubo un problema al obtener las tareas' });
     }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Servidor de Horizon enlazado correctamente con Auvo`);
+    console.log(`Servidor corriendo en puerto ${PORT}`);
 });
